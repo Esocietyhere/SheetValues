@@ -291,40 +291,45 @@ function SheetValues.new(SpreadId: string, SheetId: string?)
 		if sheet.status ~= "ok" then
 			return
 		end
-
-		--print("Time:", timestamp, "\nJSON:", sheet)
-
+	
 		self.LastUpdated = timestamp or self.LastUpdated
-
+	
 		local isChanged = false
 
+		local newKeys = {}
+	
 		for Row, RowValue in sheet.table.rows do
-			-- Parse the typed values into dictionary based on the header row keys
 			local Value = table.create(#RowValue.c)
 			for i, Comp in RowValue.c do
 				local key = sheet.table.cols[i].label
 				if not key or key == "" then
 					continue
 				end
-
 				Value[key] = ConvertTyped(if Comp.v ~= nil then Comp.v else "")
 			end
-
-			local Name = Value.Name or Value.name or string.format("%d", Row) -- Index by name, or by row if no names exist
+	
+			local Name = Value.Name or Value.name or string.format("%d", Row)
+			newKeys[Name] = true
+	
 			local OldValue = self.Values[Name]
-
 			if not DictEquals(OldValue, Value) then
 				isChanged = true
-
 				self.Values[Name] = Value
-
+	
 				local ValueChangeEvent = self._ValueChangeEvents[Name]
 				if ValueChangeEvent then
 					ValueChangeEvent:Fire(Value, OldValue)
 				end
 			end
 		end
-
+	
+		for existingName in pairs(self.Values) do
+			if not newKeys[existingName] then
+				self.Values[existingName] = nil
+				isChanged = true
+			end
+		end
+	
 		if isChanged then
 			ChangedEvent:Fire(self.Values)
 		end
