@@ -1,5 +1,5 @@
 [package]
-name = "boatbomber/sheetvalues"
+name = "esocietyhere/sheetvalues"
 description = "Use Google Sheets as a live value updater for Roblox games."
 version = "3.0.3"
 license = "MIT"
