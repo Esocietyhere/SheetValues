@@ -225,6 +225,44 @@ local function ConvertTyped(Input)
 	return Input
 end
 
+local function ParseEndDate(str)
+	if type(str) ~= "string" or str == "" then
+		return nil
+	end
+
+	local y, m, d = str:match("^Date%((%d+),(%d+),(%d+)%)$")
+	if y and m and d then
+		local year = tonumber(y)
+		local monthNum = tonumber(m)
+		local dayNum = tonumber(d)
+
+		if not year or not monthNum or not dayNum then
+			return nil
+		end
+
+		local month = monthNum + 1
+		local day = dayNum
+
+		return DateTime.fromUniversalTime(year, month, day).UnixTimestamp
+	end
+
+	local okIso, tsIso = pcall(function()
+		return DateTime.fromIsoDate(str).UnixTimestamp
+	end)
+	if okIso then
+		return tsIso
+	end
+
+	local okLocal, tsLocal = pcall(function()
+		return DateTime.fromLocalTime(tonumber(str)).UnixTimestamp
+	end)
+	if okLocal then
+		return tsLocal
+	end
+
+	return nil
+end
+
 local function DictEquals(a, b)
 	if type(a) ~= type(b) then
 		return false
@@ -291,13 +329,13 @@ function SheetValues.new(SpreadId: string, SheetId: string?)
 		if sheet.status ~= "ok" then
 			return
 		end
-	
+
 		self.LastUpdated = timestamp or self.LastUpdated
-	
+
 		local isChanged = false
 
 		local newKeys = {}
-	
+
 		for Row, RowValue in sheet.table.rows do
 			local Value = table.create(#RowValue.c)
 			for i, Comp in RowValue.c do
@@ -307,29 +345,33 @@ function SheetValues.new(SpreadId: string, SheetId: string?)
 				end
 				Value[key] = ConvertTyped(if Comp.v ~= nil then Comp.v else "")
 			end
-	
+
+			if Value.EndDate then
+				Value.EndDate = ParseEndDate(Value.EndDate)
+			end
+
 			local Name = Value.Name or Value.name or string.format("%d", Row)
 			newKeys[Name] = true
-	
+
 			local OldValue = self.Values[Name]
 			if not DictEquals(OldValue, Value) then
 				isChanged = true
 				self.Values[Name] = Value
-	
+
 				local ValueChangeEvent = self._ValueChangeEvents[Name]
 				if ValueChangeEvent then
 					ValueChangeEvent:Fire(Value, OldValue)
 				end
 			end
 		end
-	
+
 		for existingName in pairs(self.Values) do
 			if not newKeys[existingName] then
 				self.Values[existingName] = nil
 				isChanged = true
 			end
 		end
-	
+
 		if isChanged then
 			ChangedEvent:Fire(self.Values)
 		end
@@ -390,12 +432,8 @@ function SheetValues.new(SpreadId: string, SheetId: string?)
 
 		-- Send these values to all other servers
 		if self.LastSource == "Google API" then
-			local msgSuccess, msgResponse = pcall(
-				MessagingService.PublishAsync,
-				MessagingService,
-				GUID,
-				#json < 1000 and json or "TriggerStore"
-			)
+			local msgSuccess, msgResponse =
+				pcall(MessagingService.PublishAsync, MessagingService, GUID, #json < 1000 and json or "TriggerStore")
 			--if not msgSuccess then warn(msgResponse) end
 		end
 
